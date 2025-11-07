@@ -45,38 +45,100 @@ function App() {
 }
 Jika informasi pada gambar tidak cukup, jelaskan asumsi dan berikan alternatif.`
 
-      // DeepSeek VL expects content parts with type "text" or "input_image".
-      const body = {
-        model: 'deepseek-vl',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: 'Analisa gambar chart berikut dan berikan output JSON sesuai skema.' },
-              { type: 'input_image', image_url: base64DataUrl },
-            ],
-          },
-        ],
-        temperature: 0.2,
-        response_format: { type: 'json_object' },
+      // To handle API schema differences, we try a few payload variants until one succeeds.
+      const variants = [
+        // Variant A: content as string + image_url sibling on the same message
+        () => ({
+          model: 'deepseek-vl',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            {
+              role: 'user',
+              content: 'Analisa gambar chart berikut dan berikan output JSON sesuai skema.',
+              image_url: base64DataUrl,
+            },
+          ],
+          temperature: 0.2,
+          response_format: { type: 'json_object' },
+        }),
+        // Variant B: content parts but only text part, image_url sibling
+        () => ({
+          model: 'deepseek-vl',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: 'Analisa gambar chart berikut dan berikan output JSON sesuai skema.' },
+              ],
+              image_url: base64DataUrl,
+            },
+          ],
+          temperature: 0.2,
+          response_format: { type: 'json_object' },
+        }),
+        // Variant C: OpenAI-like image_url object inside content array
+        () => ({
+          model: 'deepseek-vl',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: 'Analisa gambar chart berikut dan berikan output JSON sesuai skema.' },
+                { type: 'image_url', image_url: { url: base64DataUrl } },
+              ],
+            },
+          ],
+          temperature: 0.2,
+          response_format: { type: 'json_object' },
+        }),
+        // Variant D: DeepSeek VL example some providers use: input_image with direct url
+        () => ({
+          model: 'deepseek-vl',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            {
+              role: 'user',
+              content: [
+                { type: 'text', text: 'Analisa gambar chart berikut dan berikan output JSON sesuai skema.' },
+                { type: 'input_image', image_url: base64DataUrl },
+              ],
+            },
+          ],
+          temperature: 0.2,
+          response_format: { type: 'json_object' },
+        }),
+      ]
+
+      let lastError = null
+      let data = null
+      for (const makeBody of variants) {
+        try {
+          const resp = await fetch('https://api.deepseek.com/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify(makeBody()),
+          })
+
+          if (!resp.ok) {
+            const t = await resp.text()
+            lastError = new Error(t || 'Gagal memanggil API DeepSeek')
+            continue
+          }
+
+          data = await resp.json()
+          break
+        } catch (e) {
+          lastError = e
+        }
       }
 
-      const resp = await fetch('https://api.deepseek.com/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(body),
-      })
+      if (!data) throw lastError || new Error('Gagal memanggil API DeepSeek')
 
-      if (!resp.ok) {
-        const t = await resp.text()
-        throw new Error(t || 'Gagal memanggil API DeepSeek')
-      }
-
-      const data = await resp.json()
       const raw = data.choices?.[0]?.message?.content
       let parsed
       try {
