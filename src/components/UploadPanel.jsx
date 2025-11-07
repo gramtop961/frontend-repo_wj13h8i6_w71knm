@@ -28,7 +28,7 @@ export default function UploadPanel({ onAnalyze, loading }) {
   return (
     <div className="w-full">
       <div
-        onDragOver={(e) => { e.preventDefault(); e.dataDefault }}
+        onDragOver={(e) => { e.preventDefault() }}
         onDrop={handleDrop}
         className="border-2 border-dashed border-gray-300 rounded-xl p-6 bg-white/70 backdrop-blur hover:border-blue-400 transition-colors"
       >

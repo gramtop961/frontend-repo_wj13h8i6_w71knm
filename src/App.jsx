@@ -10,7 +10,7 @@ function App() {
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
 
-  const analyze = useCallback(async ({ file, preview }) => {
+  const analyze = useCallback(async ({ file }) => {
     setError('')
     setResult(null)
     if (!apiKey) {
@@ -20,8 +20,8 @@ function App() {
     try {
       setLoading(true)
 
-      // Convert file to base64
-      const base64 = await new Promise((resolve, reject) => {
+      // Convert file to base64 data URL
+      const base64DataUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result)
         reader.onerror = reject
@@ -45,28 +45,30 @@ function App() {
 }
 Jika informasi pada gambar tidak cukup, jelaskan asumsi dan berikan alternatif.`
 
-      // DeepSeek V3 or Vision models endpoint (OpenAI-compatible schema)
+      // DeepSeek VL expects content parts with type "text" or "input_image".
+      const body = {
+        model: 'deepseek-vl',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Analisa gambar chart berikut dan berikan output JSON sesuai skema.' },
+              { type: 'input_image', image_url: base64DataUrl },
+            ],
+          },
+        ],
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+      }
+
       const resp = await fetch('https://api.deepseek.com/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-          model: 'deepseek-vl',
-          messages: [
-            { role: 'system', content: systemPrompt },
-            {
-              role: 'user',
-              content: [
-                { type: 'text', text: 'Analisa gambar chart berikut dan berikan output JSON sesuai skema.' },
-                { type: 'image_url', image_url: { url: base64 } },
-              ],
-            },
-          ],
-          temperature: 0.2,
-          response_format: { type: 'json_object' },
-        }),
+        body: JSON.stringify(body),
       })
 
       if (!resp.ok) {
@@ -78,10 +80,9 @@ Jika informasi pada gambar tidak cukup, jelaskan asumsi dan berikan alternatif.`
       const raw = data.choices?.[0]?.message?.content
       let parsed
       try {
-        parsed = JSON.parse(raw)
+        parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
       } catch {
-        // Fallback: try to extract JSON block
-        const match = raw?.match(/\{[\s\S]*\}/)
+        const match = typeof raw === 'string' ? raw.match(/\{[\s\S]*\}/) : null
         if (match) parsed = JSON.parse(match[0])
       }
 
